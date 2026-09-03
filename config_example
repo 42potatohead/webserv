@@ -1,13 +1,13 @@
 server {
-    listen 127.0.0.1 8083;
+    listen 127.0.0.1:8083;
 
     location / {
-        allowed_methods GET;
+        allow_methods GET;
         #return 302 /sgoinfre/students/ataan/webserv/chicken.jpeg;
         root /sgoinfre/students/ataan/webserv;
     }
 
-#    location /sgoinfre/students/ataan/webserv {
- #       allowed_methods GET POST ;
+#   location /sgoinfre/students/ataan/webserv {
+ #       allow_methods GET POST ;
   #  }
 }

@@ -1,8 +1,7 @@
 CC = c++
 NAME = webserv
 CFLAGS = -std=c++98
-SRCS = main.cpp ./server/TCPListner.cpp
-# ./server/Socket.cpp ./server/Request.cpp ./server/Response.cpp
+SRCS = main.cpp ./server/TCPListner.cpp ./config/Config.cpp
 OBJS = $(SRCS:.cpp=.o)
 all: $(NAME)
 $(NAME): $(OBJS)
