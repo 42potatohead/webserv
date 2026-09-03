@@ -12,6 +12,7 @@
 #include <cerrno>
 #include <cstring>
 #include <csignal>
+#include <sstream>
 
 class TCPListner {
 	private:

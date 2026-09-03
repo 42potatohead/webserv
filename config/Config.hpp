@@ -7,6 +7,8 @@
 #include <iostream>
 #include <stdexcept>
 #include <cctype>
+#include <cstdlib> // For atoi
+#include <sstream> // For istringstream
 
 struct LocationConfig {
     std::string path;                                     // e.g., "/kapouet"

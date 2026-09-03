@@ -49,17 +49,22 @@ void TCPListner::startServer() {
             throw std::runtime_error("fcntl failed to set non-blocking on server socket");
         }
 
-        if (bind(sockfd, (struct sockaddr*)&serverAddress, sizeof(serverAddress)) < 0) {
+		if (bind(sockfd, (struct sockaddr*)&serverAddress, sizeof(serverAddress)) < 0) {
+            std::cerr << "Error: Bind failed" << std::endl;
             close(sockfd);
-            throw std::runtime_error("Bind failed on port " + std::to_string(config.port));
+            std::ostringstream oss;
+            oss << "Bind failed on port " << config.port;
+            throw std::runtime_error(oss.str()); // C++98 way to combine string + int
         }
+        std::cout << "[DEBUG] Bind successful on port " << config.port << std::endl;
 
-        // Listen immediately during boot
         if (listen(sockfd, SOMAXCONN) < 0) {
+            std::cerr << "Error: Listen failed" << std::endl;
             close(sockfd);
-            throw std::runtime_error("Listen failed on port " + std::to_string(config.port));
+            std::ostringstream oss;
+            oss << "Listen failed on port " << config.port;
+            throw std::runtime_error(oss.str());
         }
-
         std::cout << "[DEBUG] Port " << config.port << " listening on fd " << sockfd << std::endl;
 
         // Register the server socket

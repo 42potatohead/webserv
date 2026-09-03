@@ -1,8 +1,10 @@
-#include "Config.hpp"
+#include "ConfigParser.hpp"
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <cctype>
+#include <cstdlib> // For std::atoi
+#include <sstream> // For std::istringstream
 
 ConfigParser::ConfigParser(const std::string& filename) : pos(0) {
     tokenize(filename);
@@ -90,7 +92,7 @@ void ConfigParser::parseLocationBlock(ServerConfig& server) {
             expect(";");
         } 
         else if (directive == "return") {
-            int code = std::stoi(consume());
+            int code = std::atoi(consume().c_str()); // C++98 compliant
             std::string url = consume();
             loc.redirect = std::make_pair(code, url);
             expect(";");
@@ -125,20 +127,21 @@ void ConfigParser::parseServerBlock() {
             size_t colon = val.find(':');
             if (colon != std::string::npos) {
                 server.host = val.substr(0, colon);
-                server.port = std::stoi(val.substr(colon + 1));
+                server.port = std::atoi(val.substr(colon + 1).c_str()); // C++98 compliant
             } else {
-                server.port = std::stoi(val);
+                server.port = std::atoi(val.c_str()); // C++98 compliant
             }
             expect(";");
         } 
         else if (directive == "client_max_body_size") {
-            server.client_max_body_size = std::stoull(consume());
+            std::istringstream iss(consume());
+            iss >> server.client_max_body_size; // C++98 compliant safe casting
             expect(";");
         } 
         else if (directive == "error_page") {
             std::vector<int> codes;
             while (peek() != ";" && std::isdigit(peek()[0])) {
-                codes.push_back(std::stoi(consume()));
+                codes.push_back(std::atoi(consume().c_str())); // C++98 compliant
             }
             std::string page = consume();
             for (size_t i = 0; i < codes.size(); ++i) {
