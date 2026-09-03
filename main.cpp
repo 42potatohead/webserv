@@ -3,11 +3,14 @@
 int main(int ac, char **av)
 {
     try {
-        TCPListner listner(8125);
-        listner.startServer();
-		listner.runServer();
+        ConfigParser parser(av[1]);
+        std::vector<ServerConfig> configs = parser.parse();
+
+        TCPListner server(configs);
+        server.startServer();
+        server.runServer();
     } catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << std::endl;
+        std::cerr << "Fatal Error: " << e.what() << std::endl;
         return 1;
     }
     return 0;

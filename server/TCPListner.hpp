@@ -6,8 +6,7 @@
 #include <sys/select.h>
 #include <iostream>
 #include <unistd.h>
-// #include "parseConfig.hpp"
-#include <vector>
+#include "../config/Config.hpp"
 #include <poll.h>
 #include <fcntl.h>
 #include <cerrno>
@@ -16,11 +15,11 @@
 
 class TCPListner {
 	private:
-		int serverSocket;
-		int port;
-		std::vector<struct pollfd> fds;
+		std::vector<ServerConfig> configs;
+        std::map<int, ServerConfig> listeningSockets;
+        std::vector<struct pollfd> fds;
 	public:
-		TCPListner(int port);
+		TCPListner(const std::vector<ServerConfig>& configs);
 		~TCPListner();
 
 		void startServer();
