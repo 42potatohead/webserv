@@ -1,11 +1,10 @@
 #include "./server/TCPListner.hpp"
-
+#include "./config/Config.hpp"
 int main(int ac, char **av)
 {
     try {
         ConfigParser parser(av[1]);
         std::vector<ServerConfig> configs = parser.parse();
-
         TCPListner server(configs);
         server.startServer();
         server.runServer();
