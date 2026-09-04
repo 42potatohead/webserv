@@ -1,7 +1,7 @@
 CC = c++
 NAME = webserv
-CFLAGS = -std=c++98
-SRCS = main.cpp ./server/TCPListner.cpp ./config/Config.cpp
+CFLAGS = -std=c++98 -g
+SRCS = main.cpp ./server/TCPListner.cpp ./config/Config.cpp ./server/Router.cpp
 OBJS = $(SRCS:.cpp=.o)
 all: $(NAME)
 $(NAME): $(OBJS)

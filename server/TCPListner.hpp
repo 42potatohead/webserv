@@ -13,12 +13,15 @@
 #include <cstring>
 #include <csignal>
 #include <sstream>
+#include "Client.hpp"
+#include "Router.hpp"
 
 class TCPListner {
 	private:
 		std::vector<ServerConfig> configs;
         std::map<int, ServerConfig> listeningSockets;
         std::vector<struct pollfd> fds;
+		std::map<int, Client> clients;
 	public:
 		TCPListner(const std::vector<ServerConfig>& configs);
 		~TCPListner();

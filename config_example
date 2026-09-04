@@ -2,9 +2,13 @@ server {
     listen 127.0.0.1:8083;
 
     location / {
-        allow_methods GET;
-        #return 302 /sgoinfre/students/ataan/webserv/chicken.jpeg;
-        root /sgoinfre/students/ataan/webserv;
+        allow_methods GET POST;
+        #return 302 static2.html;
+        root /Users/zabu-bak/Documents/webserv;
+        autoindex on;
+        index static2.html;
+
+        upload_store /Users/zabu-bak/Documents/webserv/uploads;
     }
 
 #   location /sgoinfre/students/ataan/webserv {
