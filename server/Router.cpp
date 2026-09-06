@@ -253,18 +253,20 @@ void Router::handleRequest(Client& client) {
                 close(pipe_in[0]);
                 close(pipe_out[1]);
 
-                // Write POST body to script
-                if (!req.body.empty()) {
-                    write(pipe_in[1], req.body.c_str(), req.body.length());
-                }
-                close(pipe_in[1]); // Send EOF to stdin
-
-                // Make the output pipe non-blocking for our poll() loop
+                // Make the output pipe non-blocking
                 fcntl(pipe_out[0], F_SETFL, O_NONBLOCK);
-
-                // Hand the pipe back to the Client context and suspend this client
                 client.cgi_fd = pipe_out[0];
                 client.cgi_pid = pid;
+
+                // Write POST body to script
+                if (!req.body.empty()) {
+                    fcntl(pipe_in[1], F_SETFL, O_NONBLOCK);
+                    client.cgi_in_fd = pipe_in[1]; // Save pipe to event loop
+                }
+                else {
+                    close(pipe_in[1]); // No body to send, close the input pipe
+                    client.cgi_in_fd = -1;
+                }
                 client.state = READING_CGI;
                 return; // We exit handleRequest immediately without waiting!
             }

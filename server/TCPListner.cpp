@@ -125,10 +125,10 @@ void TCPListner::runServer() {
                     int portHit = listeningSockets[fds[i].fd].port;
                     std::cout << "[DEBUG]  client on fd " << clientSocket << " connected via port " << portHit << std::endl;
 
-                    Client Client;
-                    Client.fd = clientSocket;
-                    Client.config = listeningSockets[fds[i].fd];
-                    clients[clientSocket] = Client;
+                    Client newClient;
+                    newClient.fd = clientSocket;
+                    newClient.config = listeningSockets[fds[i].fd];
+                    clients[clientSocket] = newClient;
 
                     struct pollfd client_fd;
                     client_fd.fd = clientSocket;
@@ -172,6 +172,39 @@ void TCPListner::runServer() {
                             }
                             continue;
                         }
+                    }
+                }
+
+                // ==========================================
+                // CASE 4: Writing POST body to a CGI Script
+                // ==========================================
+                else if (cgiInToClient.find(fds[i].fd) != cgiInToClient.end()) {
+                    int clientFd = cgiInToClient[fds[i].fd];
+                    Client& client = clients[clientFd];
+
+                    if (fds[i].revents & POLLOUT) {
+                        size_t remaining = client.request.body.length() - client.cgiBytesSent;
+                        ssize_t sent = write(fds[i].fd, client.request.body.c_str() + client.cgiBytesSent, remaining);
+
+                        if (sent > 0) {
+                            client.cgiBytesSent += sent;
+                        }
+
+                        // If everything is sent, or if the pipe broke
+                        if (client.cgiBytesSent >= client.request.body.length() || (sent < 0 && errno != EAGAIN)) {
+                            close(fds[i].fd); // Sends EOF to the CGI script
+                            cgiInToClient.erase(fds[i].fd);
+                            fds.erase(fds.begin() + i);
+                            client.cgi_in_fd = -1;
+                            continue;
+                        }
+                    }
+                    else if (fds[i].revents & (POLLERR | POLLHUP | POLLNVAL)) {
+                        close(fds[i].fd);
+                        cgiInToClient.erase(fds[i].fd);
+                        fds.erase(fds.begin() + i);
+                        client.cgi_in_fd = -1;
+                        continue;
                     }
                 }
 
@@ -241,6 +274,14 @@ void TCPListner::runServer() {
                                                     cgi_pfd.events = POLLIN;
                                                     fds.push_back(cgi_pfd);
                                                     cgiToClient[client.cgi_fd] = client.fd;
+
+                                                    if (client.cgi_in_fd != -1) {
+                                                        struct pollfd cgi_in_pfd;
+                                                        cgi_in_pfd.fd = client.cgi_in_fd;
+                                                        cgi_in_pfd.events = POLLOUT;
+                                                        fds.push_back(cgi_in_pfd);
+                                                        cgiInToClient[client.cgi_in_fd] = client.fd;
+                                                    }
                                                     fds[i].events = 0;
                                                 }
                                             }
@@ -303,6 +344,14 @@ void TCPListner::runServer() {
                                             cgi_pfd.events = POLLIN;
                                             fds.push_back(cgi_pfd);
                                             cgiToClient[client.cgi_fd] = client.fd;
+
+                                            if (client.cgi_in_fd != -1) {
+                                                struct pollfd cgi_in_pfd;
+                                                cgi_in_pfd.fd = client.cgi_in_fd;
+                                                cgi_in_pfd.events = POLLOUT;
+                                                fds.push_back(cgi_in_pfd);
+                                                cgiInToClient[client.cgi_in_fd] = client.fd;
+                                            }
                                             fds[i].events = 0;
                                         }
                                     }
@@ -323,6 +372,14 @@ void TCPListner::runServer() {
                                             cgi_pfd.events = POLLIN;
                                             fds.push_back(cgi_pfd);
                                             cgiToClient[client.cgi_fd] = client.fd;
+
+                                            if (client.cgi_in_fd != -1) {
+                                                struct pollfd cgi_in_pfd;
+                                                cgi_in_pfd.fd = client.cgi_in_fd;
+                                                cgi_in_pfd.events = POLLOUT;
+                                                fds.push_back(cgi_in_pfd);
+                                                cgiInToClient[client.cgi_in_fd] = client.fd;
+                                            }
                                             fds[i].events = 0;
                                         }
                                     }

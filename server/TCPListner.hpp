@@ -23,6 +23,8 @@ class TCPListner {
         std::vector<struct pollfd> fds;
 		std::map<int, Client> clients;
 		std::map<int, int> cgiToClient;
+		std::map<int, int> cgiToClient;		// Existing: Maps output pipe -> client
+    std::map<int, int> cgiInToClient; 		// <-- NEW: Maps input pipe -> client
 	public:
 		TCPListner(const std::vector<ServerConfig>& configs);
 		~TCPListner();
