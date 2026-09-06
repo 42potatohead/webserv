@@ -21,7 +21,6 @@ private:
     static std::string getMimeType(const std::string& path);
     static std::string generateAutoindex(const std::string& dirPath, const std::string& uri);
     static std::string executeCGI(const std::string& scriptPath, const std::string& cgiExec, const HTTPRequest& req);
-    static std::string getMimeType(const std::string& path);
 
 };
 
