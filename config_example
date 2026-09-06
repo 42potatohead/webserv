@@ -8,6 +8,8 @@ server {
         allow_methods GET;
         root /home/zabu-bak/webserv;
         cgi_pass .bla /home/zabu-bak/webserv/cgi_tester;
+        cgi_pass .py /usr/bin/python3;
+        cgi_pass .java /usr/bin/java;
         autoindex on;
     }
 
@@ -18,7 +20,7 @@ server {
 
     # 4. /directory/ must answer GET, use YoupiBanane root, and default to youpi.bad_extension
     location /directory {
-        allow_methods GET POST;
+        allow_methods GET;
         root /home/zabu-bak/webserv/YoupiBanane;
         index youpi.bad_extension;
     }
