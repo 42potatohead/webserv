@@ -123,12 +123,12 @@ void TCPListner::runServer() {
                     }
 
                     int portHit = listeningSockets[fds[i].fd].port;
-                    std::cout << "[DEBUG] New client on fd " << clientSocket << " connected via port " << portHit << std::endl;
+                    std::cout << "[DEBUG]  client on fd " << clientSocket << " connected via port " << portHit << std::endl;
 
-                    Client newClient;
-                    newClient.fd = clientSocket;
-                    newClient.config = listeningSockets[fds[i].fd];
-                    clients[clientSocket] = newClient;
+                    Client Client;
+                    Client.fd = clientSocket;
+                    Client.config = listeningSockets[fds[i].fd];
+                    clients[clientSocket] = Client;
 
                     struct pollfd client_fd;
                     client_fd.fd = clientSocket;
@@ -210,7 +210,7 @@ void TCPListner::runServer() {
 
                                     if (HTTPParser::parse(client.requestBuffer, client.request)) {
 
-                                        // --- NEW: Check for Chunked Encoding ---
+                                        // --- : Check for Chunked Encoding ---
                                         if (client.request.headers["Transfer-Encoding"] == "chunked") {
                                             client.isChunked = true;
                                             client.chunkedBuffer = client.request.body; // Move any pre-read body data

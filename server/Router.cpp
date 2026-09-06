@@ -325,7 +325,7 @@ void Router::handleRequest(Client& client) {
     // Generate ONLY the headers here. The body is streamed in TCPListner.cpp.
     std::ostringstream headers;
     headers << "HTTP/1.1 200 OK\r\n";
-    headers << "Content-Type: " << getMimeType(resolvedPath) << "\r\n"; // <-- NEW
+    headers << "Content-Type: " << getMimeType(resolvedPath) << "\r\n";
     headers << "Content-Length: " << fileStat.st_size << "\r\n";
     headers << "Connection: close\r\n\r\n";
 
