@@ -22,6 +22,7 @@ class TCPListner {
         std::map<int, ServerConfig> listeningSockets;
         std::vector<struct pollfd> fds;
 		std::map<int, Client> clients;
+		std::map<int, int> cgiToClient;
 	public:
 		TCPListner(const std::vector<ServerConfig>& configs);
 		~TCPListner();

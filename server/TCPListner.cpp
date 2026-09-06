@@ -1,6 +1,8 @@
 #include "TCPListner.hpp"
 #include "Router.hpp"
 #include <sstream>
+#include <sys/wait.h>
+#include <unistd.h>
 
 volatile sig_atomic_t serverRunning = 1;
 
@@ -20,8 +22,8 @@ TCPListner::~TCPListner() {
 }
 
 void TCPListner::startServer() {
-    signal(SIGINT, handleSignal);  
-    signal(SIGTERM, handleSignal); 
+    signal(SIGINT, handleSignal);
+    signal(SIGTERM, handleSignal);
 
     for (size_t i = 0; i < configs.size(); ++i) {
         const ServerConfig& config = configs[i];
@@ -42,8 +44,7 @@ void TCPListner::startServer() {
         memset(&serverAddress, 0, sizeof(serverAddress));
         serverAddress.sin_family = AF_INET;
         serverAddress.sin_port = htons(config.port);
-        // In a real scenario, you'd use inet_pton with config.host instead of INADDR_ANY
-        serverAddress.sin_addr.s_addr = INADDR_ANY; 
+        serverAddress.sin_addr.s_addr = INADDR_ANY;
 
         int flags = fcntl(sockfd, F_GETFL, 0);
         if (flags < 0 || fcntl(sockfd, F_SETFL, flags | O_NONBLOCK) < 0) {
@@ -56,7 +57,7 @@ void TCPListner::startServer() {
             close(sockfd);
             std::ostringstream oss;
             oss << "Bind failed on port " << config.port;
-            throw std::runtime_error(oss.str()); // C++98 way to combine string + int
+            throw std::runtime_error(oss.str());
         }
         std::cout << "[DEBUG] Bind successful on port " << config.port << std::endl;
 
@@ -69,9 +70,8 @@ void TCPListner::startServer() {
         }
         std::cout << "[DEBUG] Port " << config.port << " listening on fd " << sockfd << std::endl;
 
-        // Register the server socket
         listeningSockets[sockfd] = config;
-        
+
         struct pollfd pfd;
         pfd.fd = sockfd;
         pfd.events = POLLIN;
@@ -80,7 +80,6 @@ void TCPListner::startServer() {
 }
 
 void TCPListner::stopServer() {
-    // Closes all client sockets AND server sockets (they are all in fds)
     for (size_t i = 0; i < fds.size(); i++) {
         if (fds[i].fd != -1) {
             std::cout << "[DEBUG] Closing socket fd " << fds[i].fd << std::endl;
@@ -97,17 +96,17 @@ void TCPListner::runServer() {
     while (serverRunning) {
         int activity = poll(fds.data(), fds.size(), -1);
         if (activity < 0) {
-            if (errno == EINTR) break; // Clean shutdown on Ctrl+C
+            if (errno == EINTR) break;
             throw std::runtime_error("Poll failed");
         }
 
         for (int i = fds.size() - 1; i >= 0; i--) {
-            
-            // ---> FIX 1: Added POLLOUT here so the loop actually sees write events <---
+
             if (fds[i].revents & (POLLIN | POLLOUT | POLLERR | POLLHUP | POLLNVAL)) {
 
-                // CASE 1: Activity on a SERVER Socket (New Connection)
-                // If the fd is a key in our listeningSockets map, it's a server socket
+                // ==========================================
+                // CASE 1: Activity on a SERVER Socket
+                // ==========================================
                 if (listeningSockets.find(fds[i].fd) != listeningSockets.end()) {
                     int clientSocket = accept(fds[i].fd, NULL, NULL);
                     if (clientSocket < 0) {
@@ -126,11 +125,10 @@ void TCPListner::runServer() {
                     int portHit = listeningSockets[fds[i].fd].port;
                     std::cout << "[DEBUG] New client on fd " << clientSocket << " connected via port " << portHit << std::endl;
 
-                    // Initialize the Client context
                     Client newClient;
                     newClient.fd = clientSocket;
-                    newClient.config = listeningSockets[fds[i].fd]; 
-                    clients[clientSocket] = newClient;              
+                    newClient.config = listeningSockets[fds[i].fd];
+                    clients[clientSocket] = newClient;
 
                     struct pollfd client_fd;
                     client_fd.fd = clientSocket;
@@ -138,9 +136,49 @@ void TCPListner::runServer() {
                     fds.push_back(client_fd);
                 }
 
-                // CASE 2: Activity on a Client Socket -> Incoming Data, Outgoing Data, or Disconnect
+                // ==========================================
+                // CASE 3: Activity on a CGI Pipe
+                // ==========================================
+                else if (cgiToClient.find(fds[i].fd) != cgiToClient.end()) {
+                    int clientFd = cgiToClient[fds[i].fd];
+                    Client& client = clients[clientFd];
+
+                    if (fds[i].revents & (POLLIN | POLLHUP | POLLERR)) {
+                        char buffer[4096];
+                        ssize_t bytesRead = read(fds[i].fd, buffer, sizeof(buffer));
+
+                        if (bytesRead > 0) {
+                            client.responseBuffer.append(buffer, bytesRead);
+                        }
+                        if (bytesRead == 0 || (bytesRead < 0 && errno != EAGAIN) || (fds[i].revents & (POLLHUP | POLLERR))) {
+                            close(fds[i].fd);
+                            waitpid(client.cgi_pid, NULL, 0);
+
+                            if (client.responseBuffer.empty()) {
+                                client.responseBuffer = "HTTP/1.1 500 Internal Server Error\r\nConnection: close\r\n\r\n";
+                            } else {
+                                client.responseBuffer = "HTTP/1.1 200 OK\r\n" + client.responseBuffer;
+                            }
+
+                            cgiToClient.erase(fds[i].fd);
+                            fds.erase(fds.begin() + i);
+
+                            client.state = WRITING_RESPONSE;
+                            for (size_t j = 0; j < fds.size(); ++j) {
+                                if (fds[j].fd == clientFd) {
+                                    fds[j].events = POLLOUT;
+                                    break;
+                                }
+                            }
+                            continue;
+                        }
+                    }
+                }
+
+                // ==========================================
+                // CASE 2: Activity on a Client Socket
+                // ==========================================
                 else {
-                    // ---> FIX 2: Check for errors or hangups first <---
                     if (fds[i].revents & (POLLERR | POLLHUP | POLLNVAL)) {
                         std::cout << "[DEBUG] Client disconnected (Error/HUP) on fd " << fds[i].fd << std::endl;
                         clients.erase(fds[i].fd);
@@ -167,35 +205,49 @@ void TCPListner::runServer() {
                             if (client.state == READING_HEADERS) {
                                 client.requestBuffer.append(buffer, bytesRead);
 
-                                // Check if headers are complete
                                 if (client.requestBuffer.find("\r\n\r\n") != std::string::npos) {
                                     std::cout << "[DEBUG] Headers fully received on fd " << fds[i].fd << "!\n";
-                                    
-                                    if (HTTPParser::parse(client.requestBuffer, client.request)) {
-                                        
-                                        // Find Content-Length safely
-                                        client.contentLength = 0;
-                                        if (client.request.headers.find("Content-Length") != client.request.headers.end()) {
-                                            std::istringstream iss(client.request.headers["Content-Length"]);
-                                            iss >> client.contentLength;
-                                        }
 
-                                        // Enforce max body size from config
-                                        if (client.contentLength > client.config.client_max_body_size) {
-                                            client.responseBuffer = "HTTP/1.1 413 Payload Too Large\r\nConnection: close\r\n\r\n";
-                                            client.state = WRITING_RESPONSE;
-                                            fds[i].events = POLLOUT;
-                                        } 
-                                        // Check if we already have the full body (or if there is no body)
-                                        else if (client.request.body.length() >= client.contentLength) {
-                                            Router::handleRequest(client);
-                                            client.state = WRITING_RESPONSE;
-                                            fds[i].events = POLLOUT;
-                                        } 
-                                        // Otherwise, change state to wait for the rest of the body
-                                        else {
-                                            std::cout << "[DEBUG] Waiting for body data on fd " << fds[i].fd << "...\n";
+                                    if (HTTPParser::parse(client.requestBuffer, client.request)) {
+
+                                        // --- NEW: Check for Chunked Encoding ---
+                                        if (client.request.headers["Transfer-Encoding"] == "chunked") {
+                                            client.isChunked = true;
+                                            client.chunkedBuffer = client.request.body; // Move any pre-read body data
+                                            client.request.body.clear();
                                             client.state = READING_BODY;
+                                            std::cout << "[DEBUG] Expecting chunked body on fd " << fds[i].fd << "...\n";
+                                        }
+                                        // --- EXISTING: Content-Length Check ---
+                                        else {
+                                            client.contentLength = 0;
+                                            if (client.request.headers.find("Content-Length") != client.request.headers.end()) {
+                                                std::istringstream iss(client.request.headers["Content-Length"]);
+                                                iss >> client.contentLength;
+                                            }
+
+                                            if (client.contentLength > client.config.client_max_body_size) {
+                                                client.responseBuffer = "HTTP/1.1 413 Payload Too Large\r\nConnection: close\r\n\r\n";
+                                                client.state = WRITING_RESPONSE;
+                                                fds[i].events = POLLOUT;
+                                            }
+                                            else if (client.request.body.length() >= client.contentLength) {
+                                                Router::handleRequest(client);
+                                                if (client.state == WRITING_RESPONSE) {
+                                                    fds[i].events = POLLOUT;
+                                                } else if (client.state == READING_CGI) {
+                                                    struct pollfd cgi_pfd;
+                                                    cgi_pfd.fd = client.cgi_fd;
+                                                    cgi_pfd.events = POLLIN;
+                                                    fds.push_back(cgi_pfd);
+                                                    cgiToClient[client.cgi_fd] = client.fd;
+                                                    fds[i].events = 0;
+                                                }
+                                            }
+                                            else {
+                                                std::cout << "[DEBUG] Waiting for body data on fd " << fds[i].fd << "...\n";
+                                                client.state = READING_BODY;
+                                            }
                                         }
                                     } else {
                                         client.responseBuffer = "HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n";
@@ -204,18 +256,76 @@ void TCPListner::runServer() {
                                     }
                                 }
                             }
-                            
-                            // PHASE B: Reading the body (e.g., POST data)
-                            else if (client.state == READING_BODY) {
-                                // Append directly to the request's body string
-                                client.request.body.append(buffer, bytesRead);
 
-                                // Check if we've reached the expected length
-                                if (client.request.body.length() >= client.contentLength) {
-                                    std::cout << "[DEBUG] Full body (" << client.contentLength << " bytes) received on fd " << fds[i].fd << "!\n";
-                                    Router::handleRequest(client);
-                                    client.state = WRITING_RESPONSE;
-                                    fds[i].events = POLLOUT;
+                            // PHASE B: Reading the body
+                            else if (client.state == READING_BODY) {
+                                // PATH 1: Chunked Encoding
+                                if (client.isChunked) {
+                                    client.chunkedBuffer.append(buffer, bytesRead);
+
+                                    bool done = false;
+                                    while (!client.chunkedBuffer.empty()) {
+                                        size_t pos = client.chunkedBuffer.find("\r\n");
+                                        if (pos == std::string::npos) break; // Need more data for hex size
+
+                                        std::string hexStr = client.chunkedBuffer.substr(0, pos);
+                                        size_t chunkSize = 0;
+                                        std::stringstream ss;
+                                        ss << std::hex << hexStr;
+                                        ss >> chunkSize;
+
+                                        if (chunkSize == 0) {
+                                            done = true; // Received 0\r\n, body is complete
+                                            break;
+                                        }
+
+                                        // Check if the full chunk + trailing \r\n is in the buffer
+                                        if (client.chunkedBuffer.length() >= pos + 2 + chunkSize + 2) {
+                                            client.request.body.append(client.chunkedBuffer.substr(pos + 2, chunkSize));
+                                            client.chunkedBuffer.erase(0, pos + 2 + chunkSize + 2);
+                                        } else {
+                                            break; // Wait for the rest of the chunk
+                                        }
+                                    }
+
+                                    if (client.request.body.length() > client.config.client_max_body_size) {
+                                        client.responseBuffer = "HTTP/1.1 413 Payload Too Large\r\nConnection: close\r\n\r\n";
+                                        client.state = WRITING_RESPONSE;
+                                        fds[i].events = POLLOUT;
+                                    } else if (done) {
+                                        std::cout << "[DEBUG] Chunked body complete on fd " << fds[i].fd << "!\n";
+                                        Router::handleRequest(client);
+                                        if (client.state == WRITING_RESPONSE) {
+                                            fds[i].events = POLLOUT;
+                                        } else if (client.state == READING_CGI) {
+                                            struct pollfd cgi_pfd;
+                                            cgi_pfd.fd = client.cgi_fd;
+                                            cgi_pfd.events = POLLIN;
+                                            fds.push_back(cgi_pfd);
+                                            cgiToClient[client.cgi_fd] = client.fd;
+                                            fds[i].events = 0;
+                                        }
+                                    }
+                                }
+                                // PATH 2: Standard Content-Length
+                                else {
+                                    client.request.body.append(buffer, bytesRead);
+
+                                    if (client.request.body.length() >= client.contentLength) {
+                                        std::cout << "[DEBUG] Full body (" << client.contentLength << " bytes) received on fd " << fds[i].fd << "!\n";
+                                        Router::handleRequest(client);
+
+                                        if (client.state == WRITING_RESPONSE) {
+                                            fds[i].events = POLLOUT;
+                                        } else if (client.state == READING_CGI) {
+                                            struct pollfd cgi_pfd;
+                                            cgi_pfd.fd = client.cgi_fd;
+                                            cgi_pfd.events = POLLIN;
+                                            fds.push_back(cgi_pfd);
+                                            cgiToClient[client.cgi_fd] = client.fd;
+                                            fds[i].events = 0;
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -224,27 +334,41 @@ void TCPListner::runServer() {
                     // --- STATE: WRITING RESPONSE ---
                     else if (fds[i].revents & POLLOUT) {
                         Client& client = clients[fds[i].fd];
-                        
-                        // Calculate how much is left to send
+
+                        if (client.bytesSent >= client.responseBuffer.length() && client.file_fd != -1) {
+                            char fileBuf[8192];
+                            ssize_t r = read(client.file_fd, fileBuf, sizeof(fileBuf));
+                            if (r > 0) {
+                                client.responseBuffer.clear();
+                                client.responseBuffer.append(fileBuf, r);
+                                client.bytesSent = 0;
+                            } else {
+                                close(client.file_fd);
+                                client.file_fd = -1;
+                            }
+                        }
+
                         size_t remaining = client.responseBuffer.length() - client.bytesSent;
-                        
-                        // Attempt to send the remaining bytes
-                        ssize_t sent = send(fds[i].fd, client.responseBuffer.c_str() + client.bytesSent, remaining, 0);
 
-                        if (sent > 0) {
-                            client.bytesSent += sent;
-                            std::cout << "[DEBUG] Sent " << sent << " bytes to fd " << fds[i].fd << std::endl;
+                        if (remaining > 0) {
+                            ssize_t sent = send(fds[i].fd, client.responseBuffer.c_str() + client.bytesSent, remaining, 0);
 
-                            // If we sent everything, close the connection (HTTP/1.0 style)
-                            if (client.bytesSent >= client.responseBuffer.length()) {
-                                std::cout << "[DEBUG] Response fully delivered. Closing fd " << fds[i].fd << std::endl;
+                            if (sent > 0) {
+                                client.bytesSent += sent;
+                                std::cout << "[DEBUG] Sent " << sent << " bytes to fd " << fds[i].fd << std::endl;
+                            }
+                            else if (sent < 0 && errno != EWOULDBLOCK && errno != EAGAIN) {
+                                std::cerr << "[ERROR] Send failed on fd " << fds[i].fd << std::endl;
+                                if (client.file_fd != -1) close(client.file_fd);
                                 clients.erase(fds[i].fd);
                                 close(fds[i].fd);
                                 fds.erase(fds.begin() + i);
+                                continue;
                             }
                         }
-                        else if (sent < 0 && errno != EWOULDBLOCK && errno != EAGAIN) {
-                            std::cerr << "[ERROR] Send failed on fd " << fds[i].fd << std::endl;
+
+                        if (client.bytesSent >= client.responseBuffer.length() && client.file_fd == -1) {
+                            std::cout << "[DEBUG] Response fully delivered. Closing fd " << fds[i].fd << std::endl;
                             clients.erase(fds[i].fd);
                             close(fds[i].fd);
                             fds.erase(fds.begin() + i);
