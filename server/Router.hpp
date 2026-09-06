@@ -1,5 +1,4 @@
-#ifndef ROUTER_HPP
-#define ROUTER_HPP
+#pragma once
 
 #include "Client.hpp"
 #include <string>
@@ -23,5 +22,3 @@ private:
     static std::string executeCGI(const std::string& scriptPath, const std::string& cgiExec, const HTTPRequest& req);
 
 };
-
-#endif
