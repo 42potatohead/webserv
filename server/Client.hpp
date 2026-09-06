@@ -1,5 +1,4 @@
-#ifndef CLIENT_HPP
-#define CLIENT_HPP
+#pragma once
 
 #include <string>
 #include "../config/Config.hpp"
@@ -31,8 +30,6 @@ struct Client {
     std::string chunkedBuffer;    // <-- Buffer for chunked transfer encoding
 
     Client() : fd(-1), state(READING_HEADERS), bytesSent(0), contentLength(0),
-               isChunked(false), cgi_fd(-1), cgi_pid(-1), file_fd(-1), cgi_in_fd(-1), cgiBytesSent(0) {}
+               cgi_fd(-1), cgi_pid(-1), cgi_in_fd(-1), cgiBytesSent(0), file_fd(-1), isChunked(false) {}
 
 };
-
-#endif
