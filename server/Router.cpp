@@ -68,6 +68,24 @@ std::string Router::generateAutoindex(const std::string& dirPath, const std::str
     return html.str();
 }
 
+std::string Router::getMimeType(const std::string& path) {
+    size_t dotPos = path.find_last_of('.');
+    if (dotPos == std::string::npos) return "application/octet-stream"; // Default for unknown binary
+
+    std::string ext = path.substr(dotPos);
+
+    if (ext == ".html" || ext == ".htm") return "text/html";
+    if (ext == ".css") return "text/css";
+    if (ext == ".js") return "application/javascript";
+    if (ext == ".jpg" || ext == ".jpeg") return "image/jpeg";
+    if (ext == ".png") return "image/png";
+    if (ext == ".gif") return "image/gif";
+    if (ext == ".txt") return "text/plain";
+    if (ext == ".ico") return "image/x-icon";
+
+    return "application/octet-stream";
+}
+
 void Router::handleRequest(Client& client) {
     const HTTPRequest& req = client.request;
     const ServerConfig& config = client.config;
@@ -307,6 +325,7 @@ void Router::handleRequest(Client& client) {
     // Generate ONLY the headers here. The body is streamed in TCPListner.cpp.
     std::ostringstream headers;
     headers << "HTTP/1.1 200 OK\r\n";
+    headers << "Content-Type: " << getMimeType(resolvedPath) << "\r\n"; // <-- NEW
     headers << "Content-Length: " << fileStat.st_size << "\r\n";
     headers << "Connection: close\r\n\r\n";
 
