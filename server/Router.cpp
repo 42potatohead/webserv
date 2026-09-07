@@ -80,6 +80,7 @@ std::string Router::getMimeType(const std::string& path) {
     if (ext == ".jpg" || ext == ".jpeg") return "image/jpeg";
     if (ext == ".png") return "image/png";
     if (ext == ".gif") return "image/gif";
+    if (ext == ".webp") return "image/webp";
     if (ext == ".txt") return "text/plain";
     if (ext == ".ico") return "image/x-icon";
 
