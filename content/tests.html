@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>restFulQuacks | Test Guide</title>
+    <style>
+        :root {
+            --ink: #17212b;
+            --muted: #5e6d78;
+            --paper: #f5f1e8;
+            --panel: #fffdf8;
+            --line: #d8d0c2;
+            --accent: #d95d39;
+            --accent-dark: #8f3425;
+            --code: #202a33;
+            --code-ink: #f5f1e8;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            margin: 0;
+            color: var(--ink);
+            background: var(--paper);
+            font-family: Georgia, "Times New Roman", serif;
+            line-height: 1.6;
+        }
+
+        header {
+            padding: 4rem max(1.5rem, calc((100% - 1100px) / 2));
+            color: #fffaf0;
+            background: var(--code);
+            border-bottom: 8px solid var(--accent);
+        }
+
+        header p {
+            max-width: 700px;
+            margin: 0.75rem 0 0;
+            color: #cbd3d6;
+        }
+
+        main {
+            width: min(1100px, calc(100% - 3rem));
+            margin: 2rem auto 5rem;
+        }
+
+        .notice, .test {
+            padding: 1.4rem 1.6rem;
+            margin: 1.25rem 0;
+            background: var(--panel);
+            border: 1px solid var(--line);
+            border-left: 5px solid var(--accent);
+        }
+
+        .notice strong { color: var(--accent-dark); }
+
+        h1, h2, h3 { line-height: 1.15; }
+        h1 { margin: 0; font-size: clamp(2.2rem, 6vw, 4.5rem); }
+        h2 { margin-top: 3rem; font-size: 1.8rem; }
+        h3 { margin: 0 0 0.6rem; color: var(--accent-dark); }
+        p { max-width: 780px; }
+
+        code, pre {
+            font-family: Consolas, "Liberation Mono", monospace;
+        }
+
+        code {
+            padding: 0.12rem 0.3rem;
+            background: #ebe5d9;
+        }
+
+        pre {
+            overflow-x: auto;
+            padding: 1rem 1.15rem;
+            color: var(--code-ink);
+            background: var(--code);
+            border-radius: 4px;
+        }
+
+        .expect {
+            padding: 0.8rem 1rem;
+            background: #edf2ed;
+            border-left: 3px solid #4f795d;
+        }
+
+        ul { padding-left: 1.3rem; }
+        footer {
+            padding: 1.5rem;
+            color: var(--muted);
+            text-align: center;
+            border-top: 1px solid var(--line);
+        }
+
+        @media (max-width: 600px) {
+            header { padding: 3rem 1.5rem; }
+            main { width: min(100% - 1.5rem, 1100px); }
+            .test, .notice { padding: 1rem; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>restFulQuacks</h1>
+        <p>A browser-friendly test guide for the configurable C++ HTTP/1.1 server.</p>
+    </header>
+
+    <main>
+        <section class="notice">
+            <strong>Before testing:</strong> run <code>make re</code>, then start
+            <code>./webserv config/default.conf</code> from the project root.
+            The server listens on <code>127.0.0.1:8083</code>.
+        </section>
+
+        <h2>Routing and redirects</h2>
+
+        <article class="test">
+            <h3>1. Root route with curl</h3>
+            <pre>curl -i http://127.0.0.1:8083/</pre>
+            <div class="expect"><strong>Expected now:</strong> <code>HTTP/1.1 403 Error</code>.
+                <code>autoindex on;</code> is commented out, so the current router
+                rejects the request becasue you cannot serve a directory with no index.</div>
+            <p>To test the configured redirect, uncomment <code>return 301 https://www.instagram.com/chicken.quack.goose;</code>
+                in the root location, restart the server, and run:</p>
+            <pre>curl -i --max-redirs 0 http://127.0.0.1:8083/</pre>
+            <div class="expect">Expected: <code>HTTP/1.1 301 Moved</code> and a
+                <code>Location</code> header pointing to Instagram.</div>
+        </article>
+
+
+        <h2>Uploads and files</h2>
+
+        <article class="test">
+            <h3>2. Upload directory listing</h3>
+            <pre>curl -i http://127.0.0.1:8083/uploads</pre>
+            <div class="expect">Expected: <code>HTTP/1.1 200 OK</code> with an HTML
+                autoindex of <code>content/uploads</code>.</div>
+        </article>
+
+        <article class="test">
+            <h3>3. Method restriction</h3>
+            <pre>curl -i -X PUT http://127.0.0.1:8083/uploads/test.txt</pre>
+            <div class="expect">Expected: <code>HTTP/1.1 405 Error</code>. The
+                uploads location permits only GET, POST, and DELETE.</div>
+        </article>
+
+        <article class="test">
+            <h3>4. Upload, read, and delete a file</h3>
+            <pre>printf 'upload test\n' &gt; /tmp/webserv-upload.txt
+curl -i -X POST --data-binary @/tmp/webserv-upload.txt \
+    http://127.0.0.1:8083/uploads/test-upload.txt
+curl -i http://127.0.0.1:8083/uploads/test-upload.txt
+curl -i -X DELETE http://127.0.0.1:8083/uploads/test-upload.txt
+curl -i http://127.0.0.1:8083/uploads/test-upload.txt</pre>
+            <div class="expect">Expected results: POST returns 201 Created, GET
+                returns 200 OK with <code>upload test</code>, DELETE returns 200 OK,
+                and the final GET returns 404 Error.</div>
+        </article>
+
+        <h2>Error handling</h2>
+
+        <article class="test">
+            <h3>5. Missing resource</h3>
+            <pre>curl -i http://127.0.0.1:8083/secrets</pre>
+            <div class="expect">Expected: <code>HTTP/1.1 404 Error</code> using
+                <code>content/error_pages/404.html</code>.</div>
+        </article>
+
+        <article class="test">
+            <h3>6. Directory without autoindex</h3>
+            <pre>curl -i http://127.0.0.1:8083/secret</pre>
+            <div class="expect">Expected: <code>HTTP/1.1 403 Error</code>, because
+                the directory has no index and autoindex is disabled for the root.</div>
+        </article>
+
+        <h2>CGI and query strings</h2>
+
+        <article class="test">
+            <h3>7. GET CGI request</h3>
+            <pre>curl -i 'http://127.0.0.1:8083/cgi/hello.py?name=quack'</pre>
+            <div class="expect">Expected: <code>HTTP/1.1 200 OK</code>. The HTML
+                contains <code>Method: GET</code> and <code>Query: name=quack</code>.</div>
+        </article>
+
+        <article class="test">
+            <h3>8. POST CGI request</h3>
+            <pre>curl -i -X POST -H 'Content-Type: text/plain' \
+    --data 'body from curl' \
+    http://127.0.0.1:8083/cgi/post.py</pre>
+            <div class="expect">Expected: <code>HTTP/1.1 200 OK</code> with
+                <code>Method: POST</code> and <code>Body: body from curl</code>.</div>
+        </article>
+
+        <article class="test">
+            <h3>9. CGI request in Chrome</h3>
+            <p>Open <a href="http://127.0.0.1:8083/cgi/hello.py?browser=test">the CGI test URL</a>.
+                The page should show <code>Method: GET</code> and
+                <code>Query: browser=test</code>.</p>
+        </article>
+
+        <h2>Limits and raw HTTP</h2>
+
+        <article class="test">
+            <h3>10. Large request body</h3>
+            <p>The configured limit is 900 bytes. Send a 901-byte body:</p>
+            <pre>head -c 901 /dev/zero | curl -i -X POST \
+    -H "Content-Type: application/octet-stream" \
+    --data-binary @- http://127.0.0.1:8083/cgi/post.py</pre>
+            <div class="expect">Expected: <code>HTTP/1.1 413 Payload Too Large</code>.
+                The request should be rejected before CGI execution or file creation.</div>
+        </article>
+
+        <article class="test">
+            <h3>11. Raw request with telnet</h3>
+            <pre>telnet 127.0.0.1 8083
+
+GET /cgi/hello.py?client=telnet HTTP/1.1
+Host: localhost
+Connection: close</pre>
+            <div class="expect">Expected: <code>HTTP/1.1 200 OK</code> followed by
+                CGI output showing GET and <code>client=telnet</code>.</div>
+        </article>
+
+        <section class="notice">
+            <strong>Cleanup:</strong> remove the local fixture with
+            <code>rm -f /tmp/webserv-upload.txt</code>. The upload test deletes its
+            server-side file at the end.
+        </section>
+    </main>
+
+    <footer>restFulQuacks web server test guide</footer>
+</body>
+</html>
