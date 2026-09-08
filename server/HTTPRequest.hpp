@@ -7,6 +7,7 @@
 struct HTTPRequest {
     std::string method;
     std::string uri;
+    std::string query;
     std::string version;
     std::map<std::string, std::string> headers;
     std::string body;
@@ -25,6 +26,12 @@ public:
         std::string requestLine = raw.substr(0, end);
         std::istringstream iss(requestLine);
         iss >> req.method >> req.uri >> req.version;
+
+        size_t queryStart = req.uri.find('?');
+        if (queryStart != std::string::npos) {
+            req.query = req.uri.substr(queryStart + 1);
+            req.uri = req.uri.substr(0, queryStart);
+        }
 
         pos = end + 2; // move past \r\n
 

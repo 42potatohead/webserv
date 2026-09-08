@@ -126,6 +126,12 @@ void Router::handleRequest(Client& client) {
             return;
         }
     }
+    else
+    {
+        client.responseBuffer = getErrorPage(405, config);
+        client.state = WRITING_RESPONSE;
+        return;
+    }
 
     // 3. Handle Redirects (Return directive)
     if (bestMatch->redirect.first != 0) {
@@ -230,6 +236,7 @@ void Router::handleRequest(Client& client) {
 
                 std::vector<std::string> env_strings;
                 env_strings.push_back("REQUEST_METHOD=" + req.method);
+                env_strings.push_back("QUERY_STRING=" + req.query);
                 env_strings.push_back("SERVER_PROTOCOL=HTTP/1.1");
                 env_strings.push_back("SCRIPT_FILENAME=" + resolvedPath);
 
