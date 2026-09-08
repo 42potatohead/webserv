@@ -126,12 +126,6 @@ void Router::handleRequest(Client& client) {
             return;
         }
     }
-    else
-    {
-        client.responseBuffer = getErrorPage(405, config);
-        client.state = WRITING_RESPONSE;
-        return;
-    }
 
     // 3. Handle Redirects (Return directive)
     if (bestMatch->redirect.first != 0) {

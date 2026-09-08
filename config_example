@@ -15,7 +15,7 @@ server {
 
     location /post_body {
         allow_methods POST;
-        upload_store /uploads;
+        upload_store ./uploads;
     }
 
     # 4. /directory/ must answer GET, use YoupiBanane root, and default to youpi.bad_extension

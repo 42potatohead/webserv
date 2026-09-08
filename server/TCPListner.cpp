@@ -150,7 +150,7 @@ void TCPListner::runServer() {
                         if (bytesRead > 0) {
                             client.responseBuffer.append(buffer, bytesRead);
                         }
-                        if (bytesRead == 0 || (bytesRead < 0 && errno != EAGAIN) || (fds[i].revents & (POLLHUP | POLLERR))) {
+                        if (bytesRead <= 0 || (fds[i].revents & (POLLHUP | POLLERR))) {
                             close(fds[i].fd);
                             waitpid(client.cgi_pid, NULL, 0);
 
@@ -185,13 +185,13 @@ void TCPListner::runServer() {
                     if (fds[i].revents & POLLOUT) {
                         size_t remaining = client.request.body.length() - client.cgiBytesSent;
                         ssize_t sent = write(fds[i].fd, client.request.body.c_str() + client.cgiBytesSent, remaining);
-
+                        // check if sent is positive before adding to cgiBytesSent else if sent is negative, check for EAGAIN and handle accordingly
                         if (sent > 0) {
                             client.cgiBytesSent += sent;
                         }
 
                         // If everything is sent, or if the pipe broke
-                        if (client.cgiBytesSent >= client.request.body.length() || (sent < 0 && errno != EAGAIN)) {
+                        if (client.cgiBytesSent >= client.request.body.length() || sent <= 0) {
                             close(fds[i].fd); // Sends EOF to the CGI script
                             cgiInToClient.erase(fds[i].fd);
                             fds.erase(fds.begin() + i);
@@ -251,6 +251,59 @@ void TCPListner::runServer() {
                                             client.state = READING_BODY;
                                             std::cout << "[DEBUG] Expecting chunked body on fd " << fds[i].fd << "...\n";
                                         }
+
+                                            // --- NEW: Process chunks immediately if they arrived with the headers ---
+                                            bool done = false;
+                                            while (!client.chunkedBuffer.empty()) {
+                                                size_t pos = client.chunkedBuffer.find("\r\n");
+                                                if (pos == std::string::npos) break;
+
+                                                std::string hexStr = client.chunkedBuffer.substr(0, pos);
+                                                size_t chunkSize = 0;
+                                                std::stringstream ss;
+                                                ss << std::hex << hexStr;
+                                                ss >> chunkSize;
+
+                                                if (chunkSize == 0) {
+                                                    done = true;
+                                                    break;
+                                                }
+
+                                                if (client.chunkedBuffer.length() >= pos + 2 + chunkSize + 2) {
+                                                    client.request.body.append(client.chunkedBuffer.substr(pos + 2, chunkSize));
+                                                    client.chunkedBuffer.erase(0, pos + 2 + chunkSize + 2);
+                                                } else {
+                                                    break;
+                                                }
+                                            }
+
+                                            if (client.request.body.length() > client.config.client_max_body_size) {
+                                                client.responseBuffer = "HTTP/1.1 413 Payload Too Large\r\nConnection: close\r\n\r\n";
+                                                client.state = WRITING_RESPONSE;
+                                                fds[i].events = POLLOUT;
+                                            } else if (done) {
+                                                std::cout << "[DEBUG] Chunked body complete instantly on fd " << fds[i].fd << "!\n";
+                                                Router::handleRequest(client);
+                                                if (client.state == WRITING_RESPONSE) {
+                                                    fds[i].events = POLLOUT;
+                                                } else if (client.state == READING_CGI) {
+                                                    struct pollfd cgi_pfd;
+                                                    cgi_pfd.fd = client.cgi_fd;
+                                                    cgi_pfd.events = POLLIN;
+                                                    fds.push_back(cgi_pfd);
+                                                    cgiToClient[client.cgi_fd] = client.fd;
+
+                                                    if (client.cgi_in_fd != -1) {
+                                                        struct pollfd cgi_in_pfd;
+                                                        cgi_in_pfd.fd = client.cgi_in_fd;
+                                                        cgi_in_pfd.events = POLLOUT;
+                                                        fds.push_back(cgi_in_pfd);
+                                                        cgiInToClient[client.cgi_in_fd] = client.fd;
+                                                    }
+                                                    fds[i].events = 0;
+                                                }
+                                            }
+
                                         // --- EXISTING: Content-Length Check ---
                                         else {
                                             client.contentLength = 0;
@@ -265,6 +318,11 @@ void TCPListner::runServer() {
                                                 fds[i].events = POLLOUT;
                                             }
                                             else if (client.request.body.length() >= client.contentLength) {
+
+                                                if (client.request.body.length() > client.contentLength) {
+                                                    client.request.body.resize(client.contentLength);
+                                                }
+
                                                 Router::handleRequest(client);
                                                 if (client.state == WRITING_RESPONSE) {
                                                     fds[i].events = POLLOUT;
@@ -361,6 +419,11 @@ void TCPListner::runServer() {
                                     client.request.body.append(buffer, bytesRead);
 
                                     if (client.request.body.length() >= client.contentLength) {
+
+                                        // --- Truncate excess data ---
+                                        if (client.request.body.length() > client.contentLength) {
+                                            client.request.body.resize(client.contentLength);
+                                        }
                                         std::cout << "[DEBUG] Full body (" << client.contentLength << " bytes) received on fd " << fds[i].fd << "!\n";
                                         Router::handleRequest(client);
 
@@ -414,7 +477,7 @@ void TCPListner::runServer() {
                                 client.bytesSent += sent;
                                 std::cout << "[DEBUG] Sent " << sent << " bytes to fd " << fds[i].fd << std::endl;
                             }
-                            else if (sent < 0 && errno != EWOULDBLOCK && errno != EAGAIN) {
+                            else if (sent < 0) {
                                 std::cerr << "[ERROR] Send failed on fd " << fds[i].fd << std::endl;
                                 if (client.file_fd != -1) close(client.file_fd);
                                 clients.erase(fds[i].fd);
